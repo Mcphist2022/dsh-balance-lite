@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Real-time DeepSeek balance badge for DeepSeek Harness (account or API key)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mcphist2022/dsh-balance-lite.git"
+  },
+  "homepage": "https://github.com/Mcphist2022/dsh-balance-lite#readme",
+  "bugs": {
+    "url": "https://github.com/Mcphist2022/dsh-balance-lite/issues"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {
