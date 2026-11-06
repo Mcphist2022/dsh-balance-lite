@@ -102,22 +102,23 @@ const readyAccount = (wallets = [{ currency: 'CNY', balance: '1.23' }]) => ({
 
 // 3. Default config: API key channel stays disabled and the credential store is untouched.
 {
-  let credentialReads = 0;
+  const reads = [];
   const { ctx, handlers } = makeCtx({
     account: { getBalance: async () => null },
     credentials: {
-      resolve: async () => {
-        credentialReads += 1;
-        return { value: 'sk-should-not-be-read' };
+      resolve: async (ref) => {
+        reads.push(ref);
+        return undefined;
       },
     },
   });
   apply(ctx, {});
   const res = await call(handlers[0].handler);
   const body = res.json();
-  check('allowApiKey defaults to false', credentialReads === 0);
+  check('allowApiKey defaults to false', !reads.includes('DEEPSEEK_API_KEY'));
   check('signed-out response advertises disabled API key', body.apiKeyEnabled === false && /禁用/.test(body.message));
   check('signed-out stays 200', res.statusCode === 200);
+  check('opencode usage reports no-key', body.opencodeGo?.code === 'no-key');
 }
 
 // 4. Explicit opt-in: fixed endpoint, no redirects, bearer header, no key in the response.
@@ -133,7 +134,7 @@ const readyAccount = (wallets = [{ currency: 'CNY', balance: '1.23' }]) => ({
   };
   const { ctx, handlers } = makeCtx({
     account: { getBalance: async () => null },
-    credentials: { resolve: async () => ({ value: 'sk-test-key' }) },
+    credentials: { resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: 'sk-test-key' } : undefined) },
   });
   apply(ctx, { allowApiKey: true });
   const res = await call(handlers[0].handler);
@@ -196,6 +197,71 @@ const readyAccount = (wallets = [{ currency: 'CNY', balance: '1.23' }]) => ({
   apply(ctx, {});
   const res = await call(handlers[0].handler, { method: 'POST' });
   check('POST returns 405', res.statusCode === 405 && res.headers.allow === 'GET');
+}
+
+// 9. OpenCode Go usage: fixed endpoint, bearer auth, three windows, key never echoed.
+{
+  let seen = null;
+  globalThis.fetch = async (url, init) => {
+    seen = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      body: null,
+      json: async () => ({
+        usage: {
+          rolling: { status: 'ok', percent: 40, resetsAt: '2026-11-06T10:00:00+00:00' },
+          weekly: { status: 'ok', percent: 20, resetsAt: '2026-11-10T00:00:00Z' },
+          monthly: { status: 'rate-limited', percent: 100, resetsAt: '2026-12-01T00:00:00Z' },
+        },
+      }),
+    };
+  };
+  const { ctx, handlers } = makeCtx({
+    account: readyAccount(),
+    credentials: { resolve: async (ref) => (ref === 'OPENCODE_API_KEY' ? { value: 'oc-test-key' } : undefined) },
+  });
+  apply(ctx, {});
+  const res = await call(handlers[0].handler);
+  const body = res.json();
+  check('opencode usage returned', body.opencodeGo?.ok === true && body.opencodeGo.windows.length === 3);
+  check(
+    'opencode percent remaining',
+    body.opencodeGo.windows[0].percentRemaining === 60 && body.opencodeGo.windows[2].percentRemaining === 0,
+  );
+  check('opencode endpoint fixed', seen?.url === 'https://opencode.ai/zen/go/v1/usage');
+  check('opencode redirects rejected', seen?.init?.redirect === 'error');
+  check('opencode bearer header', seen?.init?.headers?.authorization === 'Bearer oc-test-key');
+  check('opencode response hides key', !JSON.stringify(body).includes('oc-test-key'));
+}
+
+// 10. A 403 EntitlementError is reported as not subscribed.
+{
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    body: null,
+    json: async () => ({ type: 'error', error: { type: 'EntitlementError' } }),
+  });
+  const { ctx, handlers } = makeCtx({
+    account: readyAccount(),
+    credentials: { resolve: async (ref) => (ref === 'OPENCODE_API_KEY' ? { value: 'oc-test-key' } : undefined) },
+  });
+  apply(ctx, {});
+  const body = (await call(handlers[0].handler)).json();
+  check('opencode not subscribed', body.opencodeGo?.code === 'not-subscribed');
+}
+
+// 11. showOpenCodeGo:false disables the feature without reading any credential.
+{
+  const reads = [];
+  const { ctx, handlers } = makeCtx({
+    account: readyAccount(),
+    credentials: { resolve: async (ref) => { reads.push(ref); return undefined; } },
+  });
+  apply(ctx, { showOpenCodeGo: false });
+  const body = (await call(handlers[0].handler)).json();
+  check('opencode usage can be disabled', body.opencodeGo?.code === 'disabled' && reads.length === 0);
 }
 
 for (const { name, ok, detail } of results) {
