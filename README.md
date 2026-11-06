@@ -13,7 +13,7 @@
 - 每 60 秒自动刷新，面板内可手动强制刷新
 - 双取数通道：
   1. **DeepSeek 账号**（`ctx.deepseekAccount.getBalance`）——桌面端登录后自动可用
-  2. **API Key**（`DEEPSEEK_API_KEY`）——回退调用官方 `GET https://api.deepseek.com/user/balance`
+  2. **API Key**（`DEEPSEEK_API_KEY`）——回退调用官方 `GET https://api.deepseek.com/user/balance`（默认关闭，需显式开启）
 - 路由带 `connection` 鉴权栅栏（登录 Cookie / Host / Origin 校验），与官方 Host 路由同一套安全模型；鉴权服务缺失时**失败关闭**
 - 20 秒服务端快照缓存，避免多客户端轮询打爆接口
 
@@ -21,20 +21,26 @@
 
 - **API Key 永不离开宿主进程**：仅在 `fetch` 时进入 `Authorization` 头，发往写死的 `https://api.deepseek.com/user/balance`；不写日志、不落盘、不返回给浏览器。
 - 账号通道完全不接触 Key（由 `ctx.deepseekAccount` 内部处理 token）。
+- **API Key 通道默认关闭**（`allowApiKey` 默认为 `false`），需显式开启；账号异常时不会自动读取 Key。
 - `fetch` 使用 `redirect: 'error'`，杜绝重定向把凭据带去其他位置。
 - 路由鉴权失败关闭：`connection.requestRejection` 不存在或抛错时直接返回 503。
 - 响应带 `x-content-type-options: nosniff`、`referrer-policy: no-referrer`、`cache-control: no-store`。
-- 可完全禁用 API Key 通道（默认为 `true`），只用账号登录时建议关闭。
+- 一次余额解析有 20s 总超时，超时后释放 in-flight 状态，不会永久卡死路由。
+- 上游响应体上限 256 KiB，钱包数量上限 20。
+- 失败结果只缓存 5s，避免上游故障时每个请求都重试。
 
-### 禁用 API Key 回退
+### 启用 API Key 回退
 
-在该 profile 的 `cordis.patch.yml` 中追加：
+默认关闭。需要时在该 profile 的 `cordis.patch.yml` 中追加：
 
 ```yaml
 - id: dsh-balance-lite
   config:
-    allowApiKey: false
+    allowApiKey: true
+    # 可选：一次余额解析的超时，单位毫秒，默认 20000
+    timeoutMs: 20000
 ```
+
 
 
 ## 兼容性
@@ -51,12 +57,14 @@
 
 桌面端 profile 由 Electron 独占，`dsh plugin` 命令无法操作，需要手工放置：
 
-1. 将本仓库目录复制到桌面端 profile：
+1. 将本仓库目录复制到桌面端 profile（只复制运行所需文件，不要把 `.git` 带进去）：
 
    ```powershell
+   $src = "C:\path\to\dsh-balance-lite"
    $dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\@local\dsh-balance-lite"
-   New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
-   Copy-Item . $dst -Recurse -Force
+   New-Item -ItemType Directory -Force -Path $dst | Out-Null
+   Copy-Item "$src\lib" $dst -Recurse -Force
+   Copy-Item "$src\package.json", "$src\cordis.patch.yml" $dst -Force
    ```
 
 2. 在 `%USERPROFILE%\.dsh\profiles\desktop\package.json` 的 `dsh.profile.bundles` 末尾追加：
@@ -109,6 +117,18 @@ dsh-balance-lite/
 ```
 
 参数 `?force=1` 可跳过 20 秒缓存。
+
+## 测试
+
+零依赖测试套件：
+
+```powershell
+npm test
+# 或
+node test/plugin.test.mjs
+```
+
+覆盖：鉴权失败关闭、默认关闭 API Key、显式启用后的固定端点/禁止重定向/Key 不回流、解析超时与 in-flight 释放、失败缓存、钱包数量上限、非 GET 拒绝、响应加固头。
 
 ## 开发
 
