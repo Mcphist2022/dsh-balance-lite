@@ -1,0 +1,33 @@
+{
+  "name": "@local/dsh-balance-lite",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time DeepSeek balance badge for DeepSeek Harness (account or API key)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "dsh": "^0.2.2-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-balance-lite
+      name: '@local/dsh-balance-lite'
