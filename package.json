@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-balance-lite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Real-time DeepSeek balance badge for DeepSeek Harness (account or API key)",
   "repository": {

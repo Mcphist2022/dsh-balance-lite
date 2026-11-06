@@ -14,8 +14,28 @@
 - 双取数通道：
   1. **DeepSeek 账号**（`ctx.deepseekAccount.getBalance`）——桌面端登录后自动可用
   2. **API Key**（`DEEPSEEK_API_KEY`）——回退调用官方 `GET https://api.deepseek.com/user/balance`
-- 路由带 `connection` 鉴权栅栏（登录 Cookie / Host / Origin 校验），与官方 Host 路由同一套安全模型
+- 路由带 `connection` 鉴权栅栏（登录 Cookie / Host / Origin 校验），与官方 Host 路由同一套安全模型；鉴权服务缺失时**失败关闭**
 - 20 秒服务端快照缓存，避免多客户端轮询打爆接口
+
+## 安全说明
+
+- **API Key 永不离开宿主进程**：仅在 `fetch` 时进入 `Authorization` 头，发往写死的 `https://api.deepseek.com/user/balance`；不写日志、不落盘、不返回给浏览器。
+- 账号通道完全不接触 Key（由 `ctx.deepseekAccount` 内部处理 token）。
+- `fetch` 使用 `redirect: 'error'`，杜绝重定向把凭据带去其他位置。
+- 路由鉴权失败关闭：`connection.requestRejection` 不存在或抛错时直接返回 503。
+- 响应带 `x-content-type-options: nosniff`、`referrer-policy: no-referrer`、`cache-control: no-store`。
+- 可完全禁用 API Key 通道（默认为 `true`），只用账号登录时建议关闭。
+
+### 禁用 API Key 回退
+
+在该 profile 的 `cordis.patch.yml` 中追加：
+
+```yaml
+- id: dsh-balance-lite
+  config:
+    allowApiKey: false
+```
+
 
 ## 兼容性
 
